@@ -7,11 +7,14 @@ import { CONFIGURATOR, SITE } from "@/lib/site";
 
 /**
  * Integrazione ufficiale OneSpec:
- * il loader embed.js crea l'iframe, gestisce l'auto-resize (onespec:resize)
- * e notifica il caricamento tramite eventi DOM (onespec:ready).
+ * - Next.js può iniettare <Script> a fine <body> → per questo usiamo
+ *   l'attributo ufficiale `data-target`, che forza il mount dell'iframe
+ *   dentro il contenitore #gds-onespec-mount (nella card, non sotto il footer).
+ * - Il loader gestisce auto-resize (onespec:resize) e notifica il caricamento
+ *   tramite evento DOM (onespec:ready).
  *
  * NB: il widget si carica solo se questo dominio è nell'elenco "Authorised sites"
- * del configuratore (backoffice OneSpec). Se non si riceve "onespec:ready"
+ * del configuratore (backoffice OneSpec). Se non riceviamo "onespec:ready"
  * entro ~7s mostriamo un fallback utile al visitatore.
  */
 export function ConfiguratorEmbed() {
@@ -24,31 +27,40 @@ export function ConfiguratorEmbed() {
       setChecking(false);
     }
     window.addEventListener("onespec:ready", onReady);
+
+    // Robustezza: se il loader si è già caricato prima che Next inietti il tag,
+    // richiamiamo scan() (idempotente: usa data-onespec-done).
+    const rescanTimes = [400, 1200, 2500, 4000];
+    const timers = rescanTimes.map((ms) =>
+      setTimeout(() => {
+        const loader = window as unknown as { __onespecLoader?: { scan: () => void } };
+        if (loader.__onespecLoader?.scan) loader.__onespecLoader.scan();
+      }, ms)
+    );
+
     const t = setTimeout(() => setChecking(false), 7000);
     return () => {
       window.removeEventListener("onespec:ready", onReady);
+      timers.forEach(clearTimeout);
       clearTimeout(t);
     };
   }, []);
 
   return (
     <div>
-      {/* Loader ufficiale OneSpec — inserisce l'iframe proprio qui */}
-      <div data-onespec-holder>
+      {/* Contenitore di mount dell'iframe */}
+      <div id="gds-onespec-mount" className="min-h-[640px]">
+        {/* Loader ufficiale OneSpec */}
         <Script
           src="https://platform.onespec.eu/embed.js"
           strategy="afterInteractive"
           data-onespec={CONFIGURATOR.publicId}
+          data-target="#gds-onespec-mount"
           data-lang="it"
           data-theme="light"
           data-accent="#1e3a5c"
           data-min-height="640"
           data-title="Configuratore preventivo Giemme Doors & Service"
-        />
-        {/* placeholder per quei casi in cui il loader cerchi data-target */}
-        <span
-          hidden
-          data-target-onespec
         />
       </div>
 
